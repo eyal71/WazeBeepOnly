@@ -165,7 +165,9 @@
       padding: 0.7rem 1.5rem;
       display: flex;
       justify-content: center;
-      gap: 0.8rem;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
       box-shadow: 0 -2px 12px rgba(0,0,0,0.07);
       z-index: 100;
     }
@@ -196,6 +198,66 @@
       white-space: nowrap;
     }
     .btn-secondary:hover { background: #f5f5f5; }
+    .btn-upload-group { display: flex; align-items: center; gap: 0.3rem; }
+    .btn-icon {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 0.6rem 0.65rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      color: #888;
+      transition: background 0.15s;
+      line-height: 1;
+    }
+    .btn-icon:hover { background: #f5f5f5; }
+
+    /* Modal overlays */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 400;
+      align-items: center; justify-content: center;
+      padding: 1rem;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-dialog {
+      background: white;
+      border-radius: 14px;
+      padding: 1.8rem 2rem;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    }
+    .modal-dialog h3 { font-size: 1rem; margin-bottom: 1.2rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 0.3rem; font-weight: 600; }
+    .input-field {
+      width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 0.55rem 0.8rem;
+      font-size: 0.88rem;
+      font-family: monospace;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .input-field:focus { border-color: #05c3dd; }
+    .form-hint { font-size: 0.72rem; color: #aaa; margin-top: 0.3rem; }
+    .dialog-btns { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1.3rem; }
+    .waze-link {
+      display: block;
+      font-size: 0.72rem;
+      color: #aaa;
+      word-break: break-all;
+      text-align: center;
+      text-decoration: none;
+      margin-top: 0.5rem;
+    }
+    .waze-link:hover { color: #05c3dd; }
+    #qrCode { display: flex; justify-content: center; margin: 0.5rem 0 0.3rem; }
+    #qrCode img, #qrCode canvas { border-radius: 8px; }
 
     /* Overlay */
     .overlay {
@@ -247,9 +309,14 @@
 
 <div class="bottom-bar">
   <button class="btn-secondary" id="btnConfig" onclick="downloadConfig()"></button>
-  <button class="btn-main" id="btnZip" onclick="generateZip()"></button>
+  <button class="btn-secondary" id="btnZip" onclick="generateZip()"></button>
+  <div class="btn-upload-group">
+    <button class="btn-main" id="btnUpload" onclick="uploadToWaze()"></button>
+    <button class="btn-icon" id="btnSettings" onclick="showSettingsDialog()" title="GitHub Settings">⚙</button>
+  </div>
 </div>
 
+<!-- Progress overlay -->
 <div class="overlay" id="overlay">
   <div class="dialog">
     <h3 id="dlgTitle"></h3>
@@ -258,22 +325,71 @@
   </div>
 </div>
 
+<!-- Settings dialog -->
+<div class="modal-overlay" id="settingsDlg">
+  <div class="modal-dialog">
+    <h3 id="settingsTitle"></h3>
+    <div class="form-group">
+      <label id="lblToken"></label>
+      <input type="password" id="inputToken" class="input-field" placeholder="ghp_...">
+      <div class="form-hint" id="tokenHint"></div>
+    </div>
+    <div class="form-group">
+      <label id="lblRepo"></label>
+      <input type="text" id="inputRepo" class="input-field">
+    </div>
+    <div class="dialog-btns">
+      <button class="btn-secondary" onclick="closeSettingsDialog()" id="btnTokenCancel"></button>
+      <button class="btn-main" onclick="saveAndUpload()" id="btnTokenSave"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Result dialog -->
+<div class="modal-overlay" id="resultDlg">
+  <div class="modal-dialog" style="text-align:center">
+    <h3 id="resultTitle"></h3>
+    <p id="resultHint" style="font-size:0.8rem;color:#aaa;margin-bottom:0.5rem"></p>
+    <div id="qrCode"></div>
+    <a id="wazeLink" href="#" class="waze-link" target="_blank"></a>
+    <div class="dialog-btns" style="margin-top:1rem; justify-content:center">
+      <button class="btn-secondary" onclick="closeResult()" id="btnResultClose"></button>
+      <button class="btn-main" id="btnOpenWaze" onclick="window.open(document.getElementById('wazeLink').href,'_blank')"></button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── i18n ──────────────────────────────────────────────────────────
 const T = {
   he: {
-    sub:        "הגדר beep לכל event של Waze",
-    listen:     "▶ תקשיב לצלילים",
-    silent:     "🔇 שקט",
-    allSilent:  "🔇 הכל",
-    allBeep1:   "🔔 הכל",
-    allBeep2:   "🔔🔔 הכל",
-    segSilent:  "🔇 שקט",
-    btnConfig:  "הורד config.json",
-    btnZip:     "הורד Voice Pack ↓",
-    generating: "מייצר קבצים...",
-    zipping:    "אורז ZIP...",
-    files:      "קבצים",
+    sub:          "הגדר beep לכל event של Waze",
+    listen:       "▶ תקשיב לצלילים",
+    silent:       "🔇 שקט",
+    allSilent:    "🔇 הכל",
+    allBeep1:     "🔔 הכל",
+    allBeep2:     "🔔🔔 הכל",
+    segSilent:    "🔇 שקט",
+    btnConfig:    "הורד config.json",
+    btnZip:       "הורד ZIP ↓",
+    btnUpload:    "העלה ל-Waze ↑",
+    generating:   "מייצר קבצים...",
+    zipping:      "אורז ZIP...",
+    files:        "קבצים",
+    settingsTitle:"הגדרות GitHub",
+    lblToken:     "GitHub Token (PAT)",
+    lblRepo:      "Repository",
+    tokenHint:    "הרשאות נדרשות: repo + workflow",
+    btnTokenSave: "שמור והעלה",
+    btnCancel:    "ביטול",
+    uploading:    "מעדכן הגדרות...",
+    triggering:   "מפעיל workflow...",
+    waiting:      "ממתין לסיום...",
+    fetchingLink: "מביא קישור...",
+    resultTitle:  "!מוכן 🎉",
+    resultHint:   "סרוק עם הטלפון:",
+    btnOpenWaze:  "פתח ב-Waze 📱",
+    btnClose:     "סגור",
     cats: [
       "ניווט - פניות",
       "מספרי יציאה (כיכר וכד׳)",
@@ -292,18 +408,33 @@ const T = {
     ],
   },
   en: {
-    sub:        "Configure beep for each Waze event",
-    listen:     "▶ Listen to sounds",
-    silent:     "🔇 Silent",
-    allSilent:  "🔇 All",
-    allBeep1:   "🔔 All",
-    allBeep2:   "🔔🔔 All",
-    segSilent:  "🔇 Silent",
-    btnConfig:  "Download config.json",
-    btnZip:     "Download Voice Pack ↓",
-    generating: "Generating files...",
-    zipping:    "Zipping...",
-    files:      "files",
+    sub:          "Configure beep for each Waze event",
+    listen:       "▶ Listen to sounds",
+    silent:       "🔇 Silent",
+    allSilent:    "🔇 All",
+    allBeep1:     "🔔 All",
+    allBeep2:     "🔔🔔 All",
+    segSilent:    "🔇 Silent",
+    btnConfig:    "Download config.json",
+    btnZip:       "Download ZIP ↓",
+    btnUpload:    "Upload to Waze ↑",
+    generating:   "Generating files...",
+    zipping:      "Zipping...",
+    files:        "files",
+    settingsTitle:"GitHub Settings",
+    lblToken:     "GitHub Token (PAT)",
+    lblRepo:      "Repository",
+    tokenHint:    "Required scopes: repo + workflow",
+    btnTokenSave: "Save & Upload",
+    btnCancel:    "Cancel",
+    uploading:    "Updating config...",
+    triggering:   "Triggering workflow...",
+    waiting:      "Waiting for completion...",
+    fetchingLink: "Fetching link...",
+    resultTitle:  "Done! 🎉",
+    resultHint:   "Scan with your phone:",
+    btnOpenWaze:  "Open in Waze 📱",
+    btnClose:     "Close",
     cats: [
       "Navigation - Turns",
       "Exit Numbers (roundabout, etc.)",
@@ -338,11 +469,22 @@ function setLang(l) {
 function t(key) { return T[lang][key]; }
 
 function applyStrings() {
-  document.getElementById('hdrSub').textContent   = t('sub');
-  document.getElementById('btnListen').textContent = t('listen');
-  document.getElementById('lblSilent').textContent = t('silent');
-  document.getElementById('btnConfig').textContent = t('btnConfig');
-  document.getElementById('btnZip').textContent    = t('btnZip');
+  document.getElementById('hdrSub').textContent        = t('sub');
+  document.getElementById('btnListen').textContent     = t('listen');
+  document.getElementById('lblSilent').textContent     = t('silent');
+  document.getElementById('btnConfig').textContent     = t('btnConfig');
+  document.getElementById('btnZip').textContent        = t('btnZip');
+  document.getElementById('btnUpload').textContent     = t('btnUpload');
+  document.getElementById('settingsTitle').textContent = t('settingsTitle');
+  document.getElementById('lblToken').textContent      = t('lblToken');
+  document.getElementById('lblRepo').textContent       = t('lblRepo');
+  document.getElementById('tokenHint').textContent     = t('tokenHint');
+  document.getElementById('btnTokenSave').textContent  = t('btnTokenSave');
+  document.getElementById('btnTokenCancel').textContent= t('btnCancel');
+  document.getElementById('resultTitle').textContent   = t('resultTitle');
+  document.getElementById('resultHint').textContent    = t('resultHint');
+  document.getElementById('btnOpenWaze').textContent   = t('btnOpenWaze');
+  document.getElementById('btnResultClose').textContent= t('btnClose');
 }
 
 // ── Data ──────────────────────────────────────────────────────────
@@ -536,6 +678,157 @@ function loadScript(src) {
   return new Promise((res,rej) => { const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
 }
 function tick() { return new Promise(r => setTimeout(r, 0)); }
+
+// ── GitHub Upload ─────────────────────────────────────────────────
+const REPO_DEFAULT    = 'eyal71/WazeBeepOnly';
+const WORKFLOW_FILE   = 'upload_voicepack.yml';
+
+function getSettings() {
+  return {
+    token: localStorage.getItem('gh_token') || '',
+    repo:  localStorage.getItem('gh_repo')  || REPO_DEFAULT,
+  };
+}
+
+function saveSettings(token, repo) {
+  localStorage.setItem('gh_token', token);
+  localStorage.setItem('gh_repo',  repo || REPO_DEFAULT);
+}
+
+function showSettingsDialog() {
+  const s = getSettings();
+  document.getElementById('inputToken').value = s.token;
+  document.getElementById('inputRepo').value  = s.repo;
+  document.getElementById('settingsDlg').classList.add('show');
+}
+
+function closeSettingsDialog() {
+  document.getElementById('settingsDlg').classList.remove('show');
+}
+
+async function saveAndUpload() {
+  const token = document.getElementById('inputToken').value.trim();
+  const repo  = document.getElementById('inputRepo').value.trim() || REPO_DEFAULT;
+  if (!token) { document.getElementById('inputToken').focus(); return; }
+  saveSettings(token, repo);
+  closeSettingsDialog();
+  await doUpload(token, repo);
+}
+
+async function uploadToWaze() {
+  const s = getSettings();
+  if (!s.token) { showSettingsDialog(); return; }
+  await doUpload(s.token, s.repo);
+}
+
+async function doUpload(token, repo) {
+  const btn = document.getElementById('btnUpload');
+  btn.disabled = true;
+  try {
+    // 1. Update config file in repo
+    showOverlay(t('uploading'), 10, '');
+    const config    = { pack_name: 'BeepOnly', events: { ...state } };
+    const configJson = JSON.stringify(config, null, 2);
+    const fileRes   = await ghApi(token, 'GET', `/repos/${repo}/contents/upload/beep_config.json`);
+    await ghApi(token, 'PUT', `/repos/${repo}/contents/upload/beep_config.json`, {
+      message: 'Update beep config via web UI',
+      content: btoa(configJson),
+      sha:     fileRes.sha,
+    });
+
+    // 2. Trigger workflow
+    showOverlay(t('triggering'), 25, '');
+    const triggerTime = new Date().toISOString();
+    await ghApi(token, 'POST', `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, {
+      ref: 'main',
+    });
+
+    // 3. Find the new run
+    showOverlay(t('waiting'), 35, '');
+    const runId = await waitForRun(token, repo, triggerTime);
+
+    // 4. Wait for completion
+    await waitForCompletion(token, repo, runId);
+
+    // 5. Read waze_link.txt from repo (workflow commits it)
+    showOverlay(t('fetchingLink'), 95, '');
+    await new Promise(r => setTimeout(r, 3000));
+    const linkRes = await ghApi(token, 'GET', `/repos/${repo}/contents/waze_link.txt`);
+    const link    = atob(linkRes.content.replace(/\s/g, '')).trim();
+
+    hideOverlay();
+    showResult(link);
+  } catch (e) {
+    hideOverlay();
+    alert('שגיאה: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function ghApi(token, method, path, body) {
+  const res = await fetch('https://api.github.com' + path, {
+    method,
+    headers: {
+      'Authorization': 'token ' + token,
+      'Accept':        'application/vnd.github.v3+json',
+      'Content-Type':  'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return {};
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'HTTP ' + res.status);
+  return data;
+}
+
+async function waitForRun(token, repo, afterTime, maxWait = 90000) {
+  const deadline = Date.now() + maxWait;
+  await new Promise(r => setTimeout(r, 4000));
+  while (Date.now() < deadline) {
+    const data = await ghApi(token, 'GET', `/repos/${repo}/actions/runs?event=workflow_dispatch&per_page=10`);
+    const run  = (data.workflow_runs || []).find(r =>
+      r.path.endsWith(WORKFLOW_FILE) && new Date(r.created_at) >= new Date(afterTime)
+    );
+    if (run) return run.id;
+    await new Promise(r => setTimeout(r, 4000));
+  }
+  throw new Error('Workflow run not found');
+}
+
+async function waitForCompletion(token, repo, runId, maxWait = 360000) {
+  const deadline = Date.now() + maxWait;
+  let pct = 40;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 6000));
+    const run = await ghApi(token, 'GET', `/repos/${repo}/actions/runs/${runId}`);
+    pct = Math.min(pct + 6, 90);
+    showOverlay(t('waiting'), pct, run.status === 'in_progress' ? '⏳' : run.status);
+    if (run.status === 'completed') {
+      if (run.conclusion !== 'success') throw new Error('Workflow ended: ' + run.conclusion);
+      return;
+    }
+  }
+  throw new Error('Workflow timed out');
+}
+
+function showResult(link) {
+  document.getElementById('wazeLink').href        = link;
+  document.getElementById('wazeLink').textContent = link;
+  const qrDiv = document.getElementById('qrCode');
+  qrDiv.innerHTML = '';
+  const render = () => new QRCode(qrDiv, { text: link, width: 180, height: 180, correctLevel: QRCode.CorrectLevel.M });
+  if (typeof QRCode !== 'undefined') {
+    render();
+  } else {
+    loadScript('https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js').then(render);
+  }
+  document.getElementById('resultDlg').classList.add('show');
+}
+
+function closeResult() {
+  document.getElementById('resultDlg').classList.remove('show');
+}
 
 // ── Init ──────────────────────────────────────────────────────────
 setLang('he');

@@ -3,6 +3,9 @@ name: Upload Voice Pack to Waze
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   upload:
     runs-on: ubuntu-latest
@@ -30,3 +33,11 @@ jobs:
           echo "**Open this link on your phone:**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           cat waze_link.txt >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit waze_link.txt
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add waze_link.txt
+          git commit -m "chore: update waze install link [skip ci]"
+          git push
