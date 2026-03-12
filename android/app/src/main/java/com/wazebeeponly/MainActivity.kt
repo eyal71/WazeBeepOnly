@@ -1,12 +1,14 @@
 package com.wazebeeponly
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.webkit.*
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.documentfile.provider.DocumentFile
 import org.json.JSONObject
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.*
@@ -14,31 +16,6 @@ import kotlin.math.*
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
-    private var pendingConfig: String? = null
-
-    private val folderPicker = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        val config = pendingConfig ?: return@registerForActivityResult
-        if (uri == null) {
-            runOnUiThread { webView.evaluateJavascript("onInstallCancel()", null) }
-            return@registerForActivityResult
-        }
-        contentResolver.takePersistableUriPermission(
-            uri,
-            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        )
-        Thread {
-            try {
-                installFiles(uri, config)
-                runOnUiThread { webView.evaluateJavascript("onInstallSuccess()", null) }
-            } catch (e: Exception) {
-                val msg = e.message?.replace("'", "\\'") ?: "שגיאה לא ידועה"
-                runOnUiThread { webView.evaluateJavascript("onInstallError('$msg')", null) }
-            }
-        }.start()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,43 +30,49 @@ class MainActivity : AppCompatActivity() {
         }
         webView.addJavascriptInterface(AndroidBridge(), "Android")
         webView.loadUrl("file:///android_asset/index.html")
+
+        // Request full storage permission if not granted
+        if (!Environment.isExternalStorageManager()) {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            intent.data = Uri.parse("package:$packageName")
+            startActivity(intent)
+        }
     }
 
     inner class AndroidBridge {
         @JavascriptInterface
         fun installVoicePack(configJson: String) {
-            pendingConfig = configJson
-            runOnUiThread {
-                // Try to open directly at the waze/sound folder
-                val hint = Uri.parse(
-                    "content://com.android.externalstorage.documents/tree/primary%3Awaze%2Fsound"
-                )
-                folderPicker.launch(hint)
-            }
+            Thread {
+                try {
+                    if (!Environment.isExternalStorageManager()) {
+                        runOnUiThread {
+                            webView.evaluateJavascript(
+                                "onInstallError('נדרשת הרשאת גישה לאחסון. אשר אותה בהגדרות ונסה שוב.')", null
+                            )
+                        }
+                        return@Thread
+                    }
+                    installFiles(configJson)
+                    runOnUiThread { webView.evaluateJavascript("onInstallSuccess()", null) }
+                } catch (e: Exception) {
+                    val msg = e.message?.replace("'", "\\'") ?: "שגיאה לא ידועה"
+                    runOnUiThread { webView.evaluateJavascript("onInstallError('$msg')", null) }
+                }
+            }.start()
         }
     }
 
     // ── File installation ──────────────────────────────────────────
 
-    private fun installFiles(treeUri: Uri, configJson: String) {
-        val config  = JSONObject(configJson)
-        val treeDoc = DocumentFile.fromTreeUri(this, treeUri)
-            ?: throw Exception("לא ניתן לפתוח את התיקייה שנבחרה")
+    private fun installFiles(configJson: String) {
+        val config = JSONObject(configJson)
 
-        // Resolve the right parent: user may select waze/, waze/sound/, or anywhere else
-        val soundDir = when (treeDoc.name) {
-            "sound" -> treeDoc
-            "waze"  -> treeDoc.findFile("sound")
-                ?: treeDoc.createDirectory("sound")
-                ?: throw Exception("לא ניתן ליצור תיקיית sound")
-            else    -> treeDoc
-        }
+        val soundDir = File(Environment.getExternalStorageDirectory(), "waze/sound")
+        if (!soundDir.exists()) soundDir.mkdirs()
 
-        // Get or create beep_only/
-        val beepOnlyDir = soundDir.findFile("beep_only")?.also { dir ->
-            dir.listFiles().forEach { it.delete() }
-        } ?: soundDir.createDirectory("beep_only")
-            ?: throw Exception("לא ניתן ליצור תיקיית beep_only")
+        val beepOnlyDir = File(soundDir, "beep_only")
+        if (beepOnlyDir.exists()) beepOnlyDir.deleteRecursively()
+        beepOnlyDir.mkdirs()
 
         val silenceBytes = generateSilence()
         val beep1Bytes   = generateBeep(1)
@@ -101,8 +84,7 @@ class MainActivity : AppCompatActivity() {
                 "beep2" -> beep2Bytes
                 else    -> silenceBytes
             }
-            val file = beepOnlyDir.createFile("audio/mpeg", "$filename.mp3") ?: continue
-            contentResolver.openOutputStream(file.uri)?.use { it.write(bytes) }
+            File(beepOnlyDir, "$filename.mp3").writeBytes(bytes)
         }
     }
 
@@ -116,12 +98,9 @@ class MainActivity : AppCompatActivity() {
         buf.put("WAVE".toByteArray(Charsets.US_ASCII))
         buf.put("fmt ".toByteArray(Charsets.US_ASCII))
         buf.putInt(16)
-        buf.putShort(1)                  // PCM
-        buf.putShort(1)                  // mono
-        buf.putInt(sampleRate)
-        buf.putInt(sampleRate * 2)       // byte rate
-        buf.putShort(2)                  // block align
-        buf.putShort(16)                 // bits per sample
+        buf.putShort(1); buf.putShort(1)
+        buf.putInt(sampleRate); buf.putInt(sampleRate * 2)
+        buf.putShort(2); buf.putShort(16)
         buf.put("data".toByteArray(Charsets.US_ASCII))
         buf.putInt(dataSize)
         samples.forEach { buf.putShort(it) }
