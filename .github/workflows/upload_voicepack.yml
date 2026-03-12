@@ -1,0 +1,32 @@
+name: Upload Voice Pack to Waze
+
+on:
+  workflow_dispatch:
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: pip install -r upload/requirements.txt
+
+      - name: Generate and upload voice pack
+        run: python upload/generate_and_upload.py upload/beep_config.json
+
+      - name: Show install link
+        run: |
+          echo "## 📱 Waze Install Link" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Open this link on your phone:**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat waze_link.txt >> $GITHUB_STEP_SUMMARY
