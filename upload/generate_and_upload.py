@@ -185,7 +185,7 @@ def upload_to_waze(mp3_dir, pack_name):
     tar_bytes = buf.getvalue()
 
     # Encode and upload
-    voice_typedef = {'1001': {'type': 'message', 'message_typedef': {'2343': {'type': 'message', 'message_typedef': {'2': {'type': 'message', 'message_typedef': {'1': {'type': 'bytes', 'name': ''}, '2': {'type': 'bytes', 'name': ''}, '5': {'type': 'bytes', 'name': ''}, '12': {'type': 'int', 'name': ''}}, 'name': ''}, '3': {'type': 'bytes', 'name': ''}}, 'name': ''}}, 'name': ''}}}
+    voice_typedef = {'1001': {'type': 'message', 'message_typedef': {'2343': {'type': 'message', 'message_typedef': {'2': {'type': 'message', 'message_typedef': {'1': {'type': 'bytes', 'name': ''}, '2': {'type': 'bytes', 'name': ''}, '5': {'type': 'bytes', 'name': ''}, '12': {'type': 'int', 'name': ''}}, 'name': ''}, '3': {'type': 'bytes', 'name': ''}}, 'name': ''}}, 'name': ''}}
     voice_data = {'1001': {'2343': {'2': {'1': pack_uuid.encode(), '2': pack_name.encode(), '5': global_server.encode(), '12': 0}, '3': tar_bytes}}}
 
     encoded = "ProtoBase64," + base64.b64encode(
