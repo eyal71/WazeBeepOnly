@@ -308,11 +308,9 @@
 </div>
 
 <div class="bottom-bar">
-  <button class="btn-secondary" id="btnConfig" onclick="downloadConfig()"></button>
-  <button class="btn-secondary" id="btnZip" onclick="generateZip()"></button>
   <div class="btn-upload-group">
     <button class="btn-main" id="btnUpload" onclick="uploadToWaze()"></button>
-    <button class="btn-icon" id="btnSettings" onclick="showSettingsDialog()" title="GitHub Settings">⚙</button>
+    <button class="btn-icon" id="btnSettings" onclick="showSettingsDialog()" title="Settings">⚙</button>
   </div>
 </div>
 
@@ -367,8 +365,7 @@ const T = {
     allBeep2:     "🔔🔔 הכל",
     segSilent:    "🔇 שקט",
     btnConfig:    "הורד config.json",
-    btnZip:       "הורד ZIP ↓",
-    btnUpload:    "העלה ל-Waze ↑",
+    btnUpload:    "התקן ב-Waze שלי",
     generating:   "מייצר קבצים...",
     zipping:      "אורז ZIP...",
     files:        "קבצים",
@@ -412,7 +409,7 @@ const T = {
     segSilent:    "🔇 Silent",
     btnConfig:    "Download config.json",
     btnZip:       "Download ZIP ↓",
-    btnUpload:    "Upload to Waze ↑",
+    btnUpload:    "Install in My Waze",
     generating:   "Generating files...",
     zipping:      "Zipping...",
     files:        "files",
@@ -466,8 +463,6 @@ function applyStrings() {
   document.getElementById('hdrSub').textContent        = t('sub');
   document.getElementById('btnListen').textContent     = t('listen');
   document.getElementById('lblSilent').textContent     = t('silent');
-  document.getElementById('btnConfig').textContent     = t('btnConfig');
-  document.getElementById('btnZip').textContent        = t('btnZip');
   document.getElementById('btnUpload').textContent     = t('btnUpload');
   document.getElementById('settingsTitle').textContent  = t('settingsTitle');
   document.getElementById('lblPackName').textContent    = t('lblPackName');
