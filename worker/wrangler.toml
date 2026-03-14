@@ -1,0 +1,10 @@
+name = "wazebeeponly"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+kv_namespaces = [
+  { binding = "KV", id = "REPLACE_WITH_YOUR_KV_ID" }
+]
+
+# Set these secrets via CLI:
+#   wrangler secret put SECRET_TOKEN

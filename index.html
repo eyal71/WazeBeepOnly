@@ -330,17 +330,13 @@
   <div class="modal-dialog">
     <h3 id="settingsTitle"></h3>
     <div class="form-group">
-      <label id="lblToken"></label>
-      <input type="password" id="inputToken" class="input-field" placeholder="ghp_...">
-      <div class="form-hint" id="tokenHint"></div>
-    </div>
-    <div class="form-group">
-      <label id="lblRepo"></label>
-      <input type="text" id="inputRepo" class="input-field">
+      <label id="lblPackName"></label>
+      <input type="text" id="inputPackName" class="input-field" placeholder="BeepOnly">
+      <div class="form-hint" id="packNameHint"></div>
     </div>
     <div class="dialog-btns">
       <button class="btn-secondary" onclick="closeSettingsDialog()" id="btnTokenCancel"></button>
-      <button class="btn-main" onclick="saveAndUpload()" id="btnTokenSave"></button>
+      <button class="btn-main" onclick="savePackName()" id="btnTokenSave"></button>
     </div>
   </div>
 </div>
@@ -376,16 +372,15 @@ const T = {
     generating:   "מייצר קבצים...",
     zipping:      "אורז ZIP...",
     files:        "קבצים",
-    settingsTitle:"הגדרות GitHub",
-    lblToken:     "GitHub Token (PAT)",
-    lblRepo:      "Repository",
-    tokenHint:    "הרשאות נדרשות: repo + workflow",
-    btnTokenSave: "שמור והעלה",
+    settingsTitle:"הגדרות",
+    lblPackName:  "שם חבילת הקול",
+    packNameHint: "ברירת מחדל: BeepOnly",
+    btnTokenSave: "שמור",
     btnCancel:    "ביטול",
-    uploading:    "מעדכן הגדרות...",
-    triggering:   "מפעיל workflow...",
-    waiting:      "ממתין לסיום...",
-    fetchingLink: "מביא קישור...",
+    uploading:    "מייצר קבצי אודיו...",
+    triggering:   "יוצר tar.gz...",
+    waiting:      "מעלה ל-Waze...",
+    fetchingLink: "מסיים...",
     resultTitle:  "!מוכן 🎉",
     resultHint:   "סרוק עם הטלפון:",
     btnOpenWaze:  "פתח ב-Waze 📱",
@@ -421,16 +416,15 @@ const T = {
     generating:   "Generating files...",
     zipping:      "Zipping...",
     files:        "files",
-    settingsTitle:"GitHub Settings",
-    lblToken:     "GitHub Token (PAT)",
-    lblRepo:      "Repository",
-    tokenHint:    "Required scopes: repo + workflow",
-    btnTokenSave: "Save & Upload",
+    settingsTitle:"Settings",
+    lblPackName:  "Voice Pack Name",
+    packNameHint: "Default: BeepOnly",
+    btnTokenSave: "Save",
     btnCancel:    "Cancel",
-    uploading:    "Updating config...",
-    triggering:   "Triggering workflow...",
-    waiting:      "Waiting for completion...",
-    fetchingLink: "Fetching link...",
+    uploading:    "Generating audio...",
+    triggering:   "Creating tar.gz...",
+    waiting:      "Uploading to Waze...",
+    fetchingLink: "Finishing...",
     resultTitle:  "Done! 🎉",
     resultHint:   "Scan with your phone:",
     btnOpenWaze:  "Open in Waze 📱",
@@ -475,12 +469,11 @@ function applyStrings() {
   document.getElementById('btnConfig').textContent     = t('btnConfig');
   document.getElementById('btnZip').textContent        = t('btnZip');
   document.getElementById('btnUpload').textContent     = t('btnUpload');
-  document.getElementById('settingsTitle').textContent = t('settingsTitle');
-  document.getElementById('lblToken').textContent      = t('lblToken');
-  document.getElementById('lblRepo').textContent       = t('lblRepo');
-  document.getElementById('tokenHint').textContent     = t('tokenHint');
-  document.getElementById('btnTokenSave').textContent  = t('btnTokenSave');
-  document.getElementById('btnTokenCancel').textContent= t('btnCancel');
+  document.getElementById('settingsTitle').textContent  = t('settingsTitle');
+  document.getElementById('lblPackName').textContent    = t('lblPackName');
+  document.getElementById('packNameHint').textContent   = t('packNameHint');
+  document.getElementById('btnTokenSave').textContent   = t('btnTokenSave');
+  document.getElementById('btnTokenCancel').textContent = t('btnCancel');
   document.getElementById('resultTitle').textContent   = t('resultTitle');
   document.getElementById('resultHint').textContent    = t('resultHint');
   document.getElementById('btnOpenWaze').textContent   = t('btnOpenWaze');
@@ -679,26 +672,57 @@ function loadScript(src) {
 }
 function tick() { return new Promise(r => setTimeout(r, 0)); }
 
-// ── GitHub Upload ─────────────────────────────────────────────────
-const REPO_DEFAULT    = 'eyal71/WazeBeepOnly';
-const WORKFLOW_FILE   = 'upload_voicepack.yml';
+// ── Worker Upload ─────────────────────────────────────────────────
+const WORKER_URL    = 'https://wazebeeponly.REPLACE_WITH_YOUR_ACCOUNT.workers.dev/upload';
+const WORKER_SECRET = 'REPLACE_WITH_YOUR_SECRET';
 
-function getSettings() {
-  return {
-    token: localStorage.getItem('gh_token') || '',
-    repo:  localStorage.getItem('gh_repo')  || REPO_DEFAULT,
-  };
+// ── Tar.gz creation (no dependencies — native browser APIs) ───────
+
+function createTar(files) {
+  const blocks = [];
+  const enc = new TextEncoder();
+  for (const {name, data} of files) {
+    const h = new Uint8Array(512);
+    const ws = (off, s, max) => { const b = enc.encode(s.slice(0, max)); h.set(b, off); };
+    ws(0, name, 100);
+    ws(100, '0000644\0', 8);
+    ws(108, '0000000\0', 8);
+    ws(116, '0000000\0', 8);
+    ws(124, data.length.toString(8).padStart(11, '0') + '\0', 12);
+    ws(136, Math.floor(Date.now()/1000).toString(8).padStart(11,'0') + '\0', 12);
+    h[156] = 0x30;
+    ws(257, 'ustar  \0', 8);
+    h.fill(0x20, 148, 156);
+    let csum = 0; h.forEach(b => csum += b);
+    ws(148, csum.toString(8).padStart(6,'0') + '\0 ', 8);
+    blocks.push(h, data);
+    const pad = (512 - data.length % 512) % 512;
+    if (pad) blocks.push(new Uint8Array(pad));
+  }
+  blocks.push(new Uint8Array(1024));
+  const total = blocks.reduce((s,b) => s+b.length, 0);
+  const out = new Uint8Array(total); let off = 0;
+  for (const b of blocks) { out.set(b, off); off += b.length; }
+  return out;
 }
 
-function saveSettings(token, repo) {
-  localStorage.setItem('gh_token', token);
-  localStorage.setItem('gh_repo',  repo || REPO_DEFAULT);
+async function gzipBytes(data) {
+  const cs = new CompressionStream('gzip');
+  const w = cs.writable.getWriter();
+  w.write(data); w.close();
+  const chunks = [];
+  const r = cs.readable.getReader();
+  for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
+  const total = chunks.reduce((s,c) => s+c.length, 0);
+  const out = new Uint8Array(total); let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
 }
+
+// ── Settings (pack name) ───────────────────────────────────────────
 
 function showSettingsDialog() {
-  const s = getSettings();
-  document.getElementById('inputToken').value = s.token;
-  document.getElementById('inputRepo').value  = s.repo;
+  document.getElementById('inputPackName').value = localStorage.getItem('pack_name') || '';
   document.getElementById('settingsDlg').classList.add('show');
 }
 
@@ -706,110 +730,58 @@ function closeSettingsDialog() {
   document.getElementById('settingsDlg').classList.remove('show');
 }
 
-async function saveAndUpload() {
-  const token = document.getElementById('inputToken').value.trim();
-  const repo  = document.getElementById('inputRepo').value.trim() || REPO_DEFAULT;
-  if (!token) { document.getElementById('inputToken').focus(); return; }
-  saveSettings(token, repo);
+function savePackName() {
+  const name = document.getElementById('inputPackName').value.trim();
+  if (name) localStorage.setItem('pack_name', name);
+  else localStorage.removeItem('pack_name');
   closeSettingsDialog();
-  await doUpload(token, repo);
 }
+
+// ── Upload to Waze via Worker ──────────────────────────────────────
 
 async function uploadToWaze() {
-  const s = getSettings();
-  if (!s.token) { showSettingsDialog(); return; }
-  await doUpload(s.token, s.repo);
-}
-
-async function doUpload(token, repo) {
   const btn = document.getElementById('btnUpload');
   btn.disabled = true;
   try {
-    // 1. Update config file in repo
     showOverlay(t('uploading'), 10, '');
-    const config    = { pack_name: 'BeepOnly', events: { ...state } };
-    const configJson = JSON.stringify(config, null, 2);
-    const fileRes   = await ghApi(token, 'GET', `/repos/${repo}/contents/upload/beep_config.json`);
-    await ghApi(token, 'PUT', `/repos/${repo}/contents/upload/beep_config.json`, {
-      message: 'Update beep config via web UI',
-      content: btoa(configJson),
-      sha:     fileRes.sha,
+    initAudio();
+    await tick();
+
+    const allFiles = FILES.flat();
+    const tarFiles = [];
+    for (let i = 0; i < allFiles.length; i++) {
+      const name = allFiles[i];
+      tarFiles.push({ name: name + '.mp3', data: AUDIO[state[name]] });
+      showOverlay(t('uploading'), 10 + (i+1)/allFiles.length*40, `${i+1} / ${allFiles.length} ${t('files')}`);
+      await tick();
+    }
+
+    showOverlay(t('triggering'), 55, '');
+    const tar    = createTar(tarFiles);
+    const tarGz  = await gzipBytes(tar);
+
+    showOverlay(t('waiting'), 68, '');
+    const packName = localStorage.getItem('pack_name') || 'BeepOnly';
+    let b64 = '';
+    tarGz.forEach(b => b64 += String.fromCharCode(b));
+
+    const res = await fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Secret': WORKER_SECRET },
+      body: JSON.stringify({ pack_name: packName, tar: btoa(b64) })
     });
-
-    // 2. Trigger workflow
-    showOverlay(t('triggering'), 25, '');
-    const triggerTime = new Date().toISOString();
-    await ghApi(token, 'POST', `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, {
-      ref: 'main',
-    });
-
-    // 3. Find the new run
-    showOverlay(t('waiting'), 35, '');
-    const runId = await waitForRun(token, repo, triggerTime);
-
-    // 4. Wait for completion
-    await waitForCompletion(token, repo, runId);
-
-    // 5. Read waze_link.txt from repo (workflow commits it)
-    showOverlay(t('fetchingLink'), 95, '');
-    await new Promise(r => setTimeout(r, 3000));
-    const linkRes = await ghApi(token, 'GET', `/repos/${repo}/contents/waze_link.txt`);
-    const link    = atob(linkRes.content.replace(/\s/g, '')).trim();
+    showOverlay(t('fetchingLink'), 90, '');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed: ' + res.status);
 
     hideOverlay();
-    showResult(link);
+    showResult(data.link);
   } catch (e) {
     hideOverlay();
-    alert('שגיאה: ' + e.message);
+    alert((lang === 'he' ? 'שגיאה: ' : 'Error: ') + e.message);
   } finally {
     btn.disabled = false;
   }
-}
-
-async function ghApi(token, method, path, body) {
-  const res = await fetch('https://api.github.com' + path, {
-    method,
-    headers: {
-      'Authorization': 'token ' + token,
-      'Accept':        'application/vnd.github.v3+json',
-      'Content-Type':  'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 204) return {};
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || 'HTTP ' + res.status);
-  return data;
-}
-
-async function waitForRun(token, repo, afterTime, maxWait = 90000) {
-  const deadline = Date.now() + maxWait;
-  await new Promise(r => setTimeout(r, 4000));
-  while (Date.now() < deadline) {
-    const data = await ghApi(token, 'GET', `/repos/${repo}/actions/runs?event=workflow_dispatch&per_page=10`);
-    const run  = (data.workflow_runs || []).find(r =>
-      r.path.endsWith(WORKFLOW_FILE) && new Date(r.created_at) >= new Date(afterTime)
-    );
-    if (run) return run.id;
-    await new Promise(r => setTimeout(r, 4000));
-  }
-  throw new Error('Workflow run not found');
-}
-
-async function waitForCompletion(token, repo, runId, maxWait = 360000) {
-  const deadline = Date.now() + maxWait;
-  let pct = 40;
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 6000));
-    const run = await ghApi(token, 'GET', `/repos/${repo}/actions/runs/${runId}`);
-    pct = Math.min(pct + 6, 90);
-    showOverlay(t('waiting'), pct, run.status === 'in_progress' ? '⏳' : run.status);
-    if (run.status === 'completed') {
-      if (run.conclusion !== 'success') throw new Error('Workflow ended: ' + run.conclusion);
-      return;
-    }
-  }
-  throw new Error('Workflow timed out');
 }
 
 function showResult(link) {
