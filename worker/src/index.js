@@ -72,6 +72,50 @@ function readVarint(buf, off) {
   return { val, off };
 }
 
+// Try to decode data as nested protobuf — only succeeds if ALL bytes consumed cleanly.
+// Prevents binary blobs from being misidentified as nested messages.
+function tryDecodeNested(data) {
+  const out = {};
+  let off = 0;
+  try {
+    while (off < data.length) {
+      const tr = readVarint(data, off);
+      if (tr.off > data.length) return null;
+      off = tr.off;
+      const fn = Number(tr.val >> 3n);
+      if (fn === 0) return null;
+      const wt = Number(tr.val & 7n);
+      const key = String(fn);
+      let val;
+      if (wt === 0) {
+        const r = readVarint(data, off);
+        if (r.off > data.length) return null;
+        off = r.off; val = Number(r.val);
+      } else if (wt === 2) {
+        const lr = readVarint(data, off);
+        if (lr.off > data.length) return null;
+        off = lr.off;
+        const len = Number(lr.val);
+        if (off + len > data.length) return null;
+        const d = data.slice(off, off + len); off += len;
+        const nested = tryDecodeNested(d);
+        val = nested !== null ? nested : bytesToStr(d);
+      } else if (wt === 1) {
+        if (off + 8 > data.length) return null;
+        off += 8; continue;
+      } else if (wt === 5) {
+        if (off + 4 > data.length) return null;
+        off += 4; continue;
+      } else return null;
+      if (out[key] === undefined) out[key] = val;
+      else if (Array.isArray(out[key])) out[key].push(val);
+      else out[key] = [out[key], val];
+    }
+  } catch { return null; }
+  if (off !== data.length || Object.keys(out).length === 0) return null;
+  return out;
+}
+
 function decodeMsg(buf, start = 0, end = buf.length) {
   const out = {};
   let off = start;
@@ -87,10 +131,8 @@ function decodeMsg(buf, start = 0, end = buf.length) {
       const lr = readVarint(buf, off); off = lr.off;
       const len = Number(lr.val);
       const data = buf.slice(off, off + len); off += len;
-      try {
-        const nested = decodeMsg(data, 0, data.length);
-        val = Object.keys(nested).length > 0 ? nested : bytesToStr(data);
-      } catch { val = bytesToStr(data); }
+      const nested = tryDecodeNested(data);
+      val = nested !== null ? nested : bytesToStr(data);
     } else if (wt === 1) { off += 8; continue; }
     else if (wt === 5) { off += 4; continue; }
     else break;
@@ -160,7 +202,8 @@ async function wazeLogin() {
   updateJar(r2);
 
   const d2 = decodeMsg(new Uint8Array(await r2.arrayBuffer()));
-  const d2k = Array.isArray(d2['1001']) ? d2['1001'][1] : d2['1001'];
+  const d2k = Array.isArray(d2['1001']) ? (d2['1001'][1] ?? d2['1001'][0]) : d2['1001'];
+  if (!d2k?.['2220']) throw new Error(`Step 2: missing field 2220. Keys: ${JSON.stringify(Object.keys(d2k ?? {}))}`);
   const anonUser = d2k['2220']['1'];
   const anonPass = d2k['2220']['2'];
 
@@ -178,8 +221,10 @@ async function wazeLogin() {
   updateJar(r3);
 
   const d3 = decodeMsg(new Uint8Array(await r3.arrayBuffer()));
-  const d3k = Array.isArray(d3['1001']) ? d3['1001'][1] : d3['1001'];
-  const info = d3k['2745']['1'];
+  const d3k = Array.isArray(d3['1001']) ? (d3['1001'][1] ?? d3['1001'][0]) : d3['1001'];
+  if (!d3k?.['2745']) throw new Error(`Step 3: missing field 2745. Keys: ${JSON.stringify(Object.keys(d3k ?? {}))}`);
+  const info = d3k['2745']['1'] ?? d3k['2745'];
+  if (!info?.['3']) throw new Error(`Step 3: missing auth token. Info keys: ${JSON.stringify(Object.keys(info ?? {}))}`);
   const authToken    = info['3'];
   const globalServer = info['2'];
   const userId       = parseInt(info['1']);
