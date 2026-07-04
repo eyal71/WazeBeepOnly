@@ -6,6 +6,7 @@ Usage: python generate_and_upload.py [config.json]
 import base64
 import json
 import os
+import re
 import sys
 import tarfile
 import tempfile
@@ -72,6 +73,8 @@ def get_audio(sound_type):
 def generate_mp3_files(output_dir):
     print(f"🎵 Generating {len(EVENTS)} MP3 files...")
     for filename, sound_type in EVENTS.items():
+        if not re.fullmatch(r"[A-Za-z0-9_]+", filename):
+            raise ValueError(f"Invalid event filename: {filename!r}")
         audio = get_audio(sound_type)
         path  = os.path.join(output_dir, f"{filename}.mp3")
         audio.export(path, format="mp3", bitrate="64k",

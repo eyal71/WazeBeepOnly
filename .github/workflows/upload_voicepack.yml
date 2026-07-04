@@ -2,6 +2,14 @@ name: Upload Voice Pack to Waze
 
 on:
   workflow_dispatch:
+    inputs:
+      pack_name:
+        description: 'Voice pack name'
+        required: false
+        default: 'BeepOnly'
+      events_json:
+        description: 'JSON map of event name -> silent/beep1/beep2'
+        required: false
 
 permissions:
   contents: write
@@ -22,6 +30,21 @@ jobs:
 
       - name: Install Python dependencies
         run: pip install -r upload/requirements.txt
+
+      - name: Write beep config from inputs
+        if: ${{ inputs.events_json != '' }}
+        env:
+          PACK_NAME: ${{ inputs.pack_name }}
+          EVENTS_JSON: ${{ inputs.events_json }}
+        run: |
+          python -c "
+          import json, os
+          events = json.loads(os.environ['EVENTS_JSON'])
+          events = {k: v for k, v in events.items() if isinstance(k, str) and k.replace('_','').isalnum()}
+          config = {'pack_name': os.environ.get('PACK_NAME') or 'BeepOnly', 'events': events}
+          with open('upload/beep_config.json', 'w') as f:
+              json.dump(config, f)
+          "
 
       - name: Generate and upload voice pack
         run: python upload/generate_and_upload.py upload/beep_config.json

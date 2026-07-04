@@ -8,3 +8,7 @@ kv_namespaces = [
 
 # Set these secrets via CLI:
 #   wrangler secret put SECRET_TOKEN
+#   wrangler secret put GITHUB_TOKEN
+#     (classic PAT with "repo" + "workflow" scopes — triggers the
+#      upload_voicepack.yml GitHub Actions workflow, which does the
+#      actual Waze login/upload since Waze blocks Cloudflare's IPs)

@@ -374,9 +374,8 @@ const T = {
     packNameHint: "ברירת מחדל: BeepOnly",
     btnTokenSave: "שמור",
     btnCancel:    "ביטול",
-    uploading:    "מייצר קבצי אודיו...",
-    triggering:   "יוצר tar.gz...",
-    waiting:      "מעלה ל-Waze...",
+    triggering:   "מפעיל את תהליך ההעלאה...",
+    waiting:      "מעלה ל-Waze (עד דקה)...",
     fetchingLink: "מסיים...",
     resultTitle:  "!מוכן 🎉",
     resultHint:   "סרוק עם הטלפון:",
@@ -418,9 +417,8 @@ const T = {
     packNameHint: "Default: BeepOnly",
     btnTokenSave: "Save",
     btnCancel:    "Cancel",
-    uploading:    "Generating audio...",
-    triggering:   "Creating tar.gz...",
-    waiting:      "Uploading to Waze...",
+    triggering:   "Triggering upload...",
+    waiting:      "Uploading to Waze (up to a minute)...",
     fetchingLink: "Finishing...",
     resultTitle:  "Done! 🎉",
     resultHint:   "Scan with your phone:",
@@ -671,49 +669,6 @@ function tick() { return new Promise(r => setTimeout(r, 0)); }
 const WORKER_URL    = 'https://wazebeeponly.eyal71.workers.dev/upload';
 const WORKER_SECRET = '!qz2QZ3s';
 
-// ── Tar.gz creation (no dependencies — native browser APIs) ───────
-
-function createTar(files) {
-  const blocks = [];
-  const enc = new TextEncoder();
-  for (const {name, data} of files) {
-    const h = new Uint8Array(512);
-    const ws = (off, s, max) => { const b = enc.encode(s.slice(0, max)); h.set(b, off); };
-    ws(0, name, 100);
-    ws(100, '0000644\0', 8);
-    ws(108, '0000000\0', 8);
-    ws(116, '0000000\0', 8);
-    ws(124, data.length.toString(8).padStart(11, '0') + '\0', 12);
-    ws(136, Math.floor(Date.now()/1000).toString(8).padStart(11,'0') + '\0', 12);
-    h[156] = 0x30;
-    ws(257, 'ustar  \0', 8);
-    h.fill(0x20, 148, 156);
-    let csum = 0; h.forEach(b => csum += b);
-    ws(148, csum.toString(8).padStart(6,'0') + '\0 ', 8);
-    blocks.push(h, data);
-    const pad = (512 - data.length % 512) % 512;
-    if (pad) blocks.push(new Uint8Array(pad));
-  }
-  blocks.push(new Uint8Array(1024));
-  const total = blocks.reduce((s,b) => s+b.length, 0);
-  const out = new Uint8Array(total); let off = 0;
-  for (const b of blocks) { out.set(b, off); off += b.length; }
-  return out;
-}
-
-async function gzipBytes(data) {
-  const cs = new CompressionStream('gzip');
-  const w = cs.writable.getWriter();
-  w.write(data); w.close();
-  const chunks = [];
-  const r = cs.readable.getReader();
-  for (;;) { const {done,value} = await r.read(); if (done) break; chunks.push(value); }
-  const total = chunks.reduce((s,c) => s+c.length, 0);
-  const out = new Uint8Array(total); let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out;
-}
-
 // ── Settings (pack name) ───────────────────────────────────────────
 
 function showSettingsDialog() {
@@ -737,41 +692,29 @@ function savePackName() {
 async function uploadToWaze() {
   const btn = document.getElementById('btnUpload');
   btn.disabled = true;
+  let pct = 12;
+  showOverlay(t('triggering'), pct, '');
+  const progressTimer = setInterval(() => {
+    pct = Math.min(pct + 1, 88);
+    showOverlay(t('waiting'), pct, '');
+  }, 1000);
+
   try {
-    showOverlay(t('uploading'), 10, '');
-    initAudio();
-    await tick();
-
-    const allFiles = FILES.flat();
-    const tarFiles = [];
-    for (let i = 0; i < allFiles.length; i++) {
-      const name = allFiles[i];
-      tarFiles.push({ name: name + '.mp3', data: AUDIO[state[name]] });
-      showOverlay(t('uploading'), 10 + (i+1)/allFiles.length*40, `${i+1} / ${allFiles.length} ${t('files')}`);
-      await tick();
-    }
-
-    showOverlay(t('triggering'), 55, '');
-    const tar    = createTar(tarFiles);
-    const tarGz  = await gzipBytes(tar);
-
-    showOverlay(t('waiting'), 68, '');
     const packName = localStorage.getItem('pack_name') || 'BeepOnly';
-    let b64 = '';
-    tarGz.forEach(b => b64 += String.fromCharCode(b));
-
     const res = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Secret': WORKER_SECRET },
-      body: JSON.stringify({ pack_name: packName, tar: btoa(b64) })
+      body: JSON.stringify({ pack_name: packName, events: { ...state } })
     });
-    showOverlay(t('fetchingLink'), 90, '');
+    clearInterval(progressTimer);
+    showOverlay(t('fetchingLink'), 95, '');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload failed: ' + res.status);
 
     hideOverlay();
     showResult(data.link);
   } catch (e) {
+    clearInterval(progressTimer);
     hideOverlay();
     alert((lang === 'he' ? 'שגיאה: ' : 'Error: ') + e.message);
   } finally {
